@@ -1,0 +1,91 @@
+# YOLO Training Service - Implementation Walkthrough
+
+## Summary
+
+Created a composable service layer in `com.service/` with 5 services extracted from the notebook.
+
+## Files Created
+
+| File | Purpose |
+|------|---------|
+| [config.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/config.py) | Typed configuration dataclasses |
+| [dataset_service.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/dataset_service.py) | Dataset download, structure detection, YAML creation |
+| [training_service.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/training_service.py) | Model training and resume |
+| [inference_service.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/inference_service.py) | Image/video/frame inference |
+| [validation_service.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/validation_service.py) | Model validation and benchmarking |
+| [export_service.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/export_service.py) | Export to NCNN, ONNX, CoreML, TFLite |
+| [__init__.py](file:///Users/ebowwa/apps/caringmind-project/yolo-training-template/com.service/__init__.py) | Clean public exports |
+
+## Usage Example
+
+```python
+from com.service import (
+    DatasetService, TrainingService, InferenceService,
+    DatasetConfig, TrainingConfig, InferenceConfig
+)
+
+# 1. Prepare dataset
+dataset_config = DatasetConfig(
+    dataset_handle='jocelyndumlao/multi-weather-pothole-detection-mwpd',
+    nc=1,
+    names=['Potholes']
+)
+yaml_path = DatasetService.prepare(dataset_config)
+
+# 2. Train model
+train_config = TrainingConfig(epochs=60, imgsz=512, device='0')
+result = TrainingService.train(yaml_path, train_config)
+
+# 3. Run inference
+inference = InferenceService(result.best_model_path)
+
+# On images
+detections = inference.infer_image('test.jpg')
+
+# On raw frames (useful for streaming from glasses)
+import cv2
+frame = cv2.imread('frame.jpg')
+result = inference.infer_frame(frame)
+for det in result.detections:
+    print(f"{det.class_name}: {det.confidence:.2f}")
+```
+
+## Verification
+
+```
+============================================================
+Testing com.service imports...
+============================================================
+
+[1/5] Testing config imports...
+  ✓ All config classes imported successfully
+
+[2/5] Testing service imports...
+  ✓ All service classes imported successfully
+
+[3/5] Testing config instantiation...
+  ✓ DatasetConfig: handle=test/dataset, nc=2
+  ✓ TrainingConfig: epochs=10, imgsz=640
+  ✓ InferenceConfig: conf=0.6
+  ✓ ExportConfig: format=onnx
+
+[4/5] Testing result dataclasses...
+  ✓ Detection: pothole @ 0.95
+  ✓ InferenceResult: 1 detections, 15.5ms
+  ✓ TrainingResult: 60 epochs
+
+[5/5] Testing service method availability...
+  ✓ DatasetService: download, detect_structure, create_yaml, prepare
+  ✓ TrainingService: train, resume, get_best_model_path
+  ✓ InferenceService: infer_frame, infer_image, infer_video, infer_batch
+  ✓ ValidationService: validate, benchmark
+  ✓ ExportService: export, export_ncnn, export_onnx
+
+============================================================
+All tests passed! ✓
+============================================================
+```
+
+## Next Steps
+
+Build `com.api` next - HTTP endpoints that call these services.
