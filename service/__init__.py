@@ -61,6 +61,7 @@ from .callbacks import (
     MetricsLoggerCallback,
     create_default_callbacks,
 )
+from .rfdetr_service import RFDETRService, RFDETRResult, RFDETRDetection
 
 __all__ = [
     # Version
@@ -99,4 +100,8 @@ __all__ = [
     "EarlyStoppingCallback",
     "MetricsLoggerCallback",
     "create_default_callbacks",
+    # RF-DETR Backend
+    "RFDETRService",
+    "RFDETRResult",
+    "RFDETRDetection",
 ]

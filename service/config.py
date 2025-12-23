@@ -51,6 +51,16 @@ class ModelRegistry:
         "yolo11x.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x.pt",
     }
     
+    # RF-DETR model variants (require rfdetr package)
+    RFDETR_MODELS = {
+        "rfdetr-nano": {"params": "30.5M", "resolution": 384, "coco_ap": 48.4},
+        "rfdetr-small": {"params": "32.1M", "resolution": 512, "coco_ap": 53.0},
+        "rfdetr-medium": {"params": "33.7M", "resolution": 576, "coco_ap": 54.7},
+        "rfdetr-base": {"params": "29M", "resolution": 560, "coco_ap": 53.3},
+        "rfdetr-large": {"params": "128M", "resolution": 560, "coco_ap": 56.0},
+        "rfdetr-seg": {"params": "~35M", "resolution": 384, "coco_ap": 42.7, "segmentation": True},
+    }
+    
     @classmethod
     def get_path(cls, model_name: str) -> str:
         """
@@ -143,6 +153,36 @@ class ModelRegistry:
             raise RuntimeError(f"Failed to download {model_name}: {e}")
         
         return model_path
+    
+    @classmethod
+    def is_rfdetr_model(cls, model_name: str) -> bool:
+        """Check if model name is an RF-DETR variant."""
+        return model_name.startswith("rfdetr-") or model_name in cls.RFDETR_MODELS
+    
+    @classmethod
+    def get_backend(cls, model_name: str) -> str:
+        """
+        Determine which backend to use for a given model name.
+        
+        Returns:
+            "rfdetr" or "yolo"
+        """
+        if cls.is_rfdetr_model(model_name):
+            return "rfdetr"
+        return "yolo"
+    
+    @classmethod
+    def list_all_models(cls) -> dict:
+        """
+        List all available models (YOLO + RF-DETR).
+        
+        Returns:
+            Dict with "yolo" and "rfdetr" keys containing model lists
+        """
+        return {
+            "yolo": list(cls.HOSTED_MODELS.keys()),
+            "rfdetr": list(cls.RFDETR_MODELS.keys()),
+        }
 
 
 @dataclass
