@@ -20,10 +20,11 @@ This document outlines the strategic plan for injecting AI-driven capabilities i
 - **Generative Augmentation**:
   - Implement `WeatherTransform` using Stable Diffusion + ControlNet.
   - Generate synthetic variations for hard-to-find conditions (e.g., snow, heavy rain, night-time).
-- **SLAM-Assisted Labeling & Mapping**:
-  - Integrate **Simultaneous Localization and Mapping (SLAM)** to track objects across temporal frames.
-  - Use 6-DOF camera poses to propagate labels from one keyframe to a whole sequence.
-  - Implementation of `SpatialMapper` to project detections into a persistent 3D world map.
+- **Mobile/Wearable Optimized SLAM**:
+  - Integrate **Lightweight SLAM** optimized for mobile phones and smart glasses.
+  - Focus on **temporal persistence**: Tracking objects across shaky, egocentric video streams.
+  - Implementation of `SpatialMapper` to stabilize detections using device IMU (Inertial Measurement Unit) or monocular visual odometry.
+  - Propagation of labels across frames to reduce redundant AI inference calls.
 - **Occlusion Injection**:
   - Use Segment Anything Model (SAM) to cutout objects and intelligently place them as occlusions.
 
@@ -67,6 +68,6 @@ To keep the API responsive while running slow AI tasks:
 ## 📋 Action Items
 
 1. [ ] Define `AIBase` interface for generic AI provider calls.
-2. [ ] Integrate `Ollama` support for low-latency local VLM cleaning.
+2. [ ] Integrate on-device lightweight VLMs (e.g. CoreML, TFLite) for low-latency cleaning.
 3. [ ] Implement async processing endpoint structure in `routes.py`.
 4. [ ] Create `service/preprocessing/ai/` directory for specialized modules.
