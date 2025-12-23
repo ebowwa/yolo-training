@@ -49,6 +49,7 @@ from export_service import ExportService
 from inference_service import InferenceService
 from training_service import TrainingService
 from validation_service import ValidationService
+from slam_service import SlamService
 
 __all__ = [
     # Version
@@ -71,4 +72,5 @@ __all__ = [
     "InferenceService",
     "ValidationService",
     "ExportService",
+    "SlamService",
 ]

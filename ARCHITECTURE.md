@@ -30,6 +30,7 @@ Pure business logic. No HTTP, no networking.
 | `InferenceService` | Image/video/frame inference |
 | `ValidationService` | Model validation and benchmarking |
 | `ExportService` | Export to NCNN, ONNX, CoreML, TFLite |
+| `SlamService` | Simultaneous Localization and Mapping (Spatial context) |
 
 ### com.api (✅ Complete)
 
