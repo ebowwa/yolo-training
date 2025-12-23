@@ -1,6 +1,6 @@
-# YOLO Training & Inference Service
+# Edge Training & Inference Platform
 
-A modular, three-layer ML service for training, validating, and deploying YOLO models. Supports **YOLOv5, v8, v9, v10, v11, and YOLO-World** via the Ultralytics library. Includes a composable spatial inference pipeline for real-time detection on wearables.
+A modular, multi-backend ML platform for training, validating, and deploying object detection models on edge devices. Supports **YOLO (v5, v8, v9, v10, v11, YOLO-World)** and **RF-DETR** (transformer-based SOTA). Includes composable spatial inference pipelines for real-time detection on wearables.
 
 ## 🌐 Hybrid AI: Cloud + Local Edge
 
@@ -28,12 +28,14 @@ For more details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Key Features
 
-- **Multi-YOLO Support**: Works with YOLOv5, v8, v9, v10, v11, and YOLO-World models.
+- **Multi-Backend Support**: YOLO family (via Ultralytics) and RF-DETR (transformer, 60+ AP on COCO).
 - **3D Spatial Intelligence (SLAM)**: Real-time 6DoF camera pose estimation and 3D object anchoring for wearables.
 - **PEFT / Personal Learning**: Train custom "Private" models with 5-10 images using **LoRA** (Low-Rank Adaptation).
 - **Automated Dataset Prep**: Integration with Kaggle for dataset downloads and automatic YOLO structure detection.
 - **Preprocessing Pipeline**: Composable cleaners (corrupted image detection, bbox validation) and transforms (augmentation).
 - **Deployment-Ready Exports**: Export trained models to NCNN, ONNX, CoreML, and TFLite formats for edge hardware.
+- **Inference Optimization**: JIT tracing for up to 2x speedup on PyTorch models.
+- **Training Callbacks**: TensorBoard, W&B logging, and early stopping built-in.
 - **Interactive Counting**: Human-in-the-loop density refinement based on [arxiv:2309.05277](https://arxiv.org/abs/2309.05277).
 - **Advanced AI Capabilities**: Gaze-prioritized learning and dense counting with SimOTA. See [CAPABILITIES.md](docs/CAPABILITIES.md).
 
@@ -46,7 +48,7 @@ For more details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ### Installation with uv (Recommended)
 ```bash
-cd yolo-training
+cd edge-training
 
 # Create virtual environment and install dependencies
 uv venv
@@ -56,7 +58,7 @@ uv pip install -r requirements.txt
 
 ### Installation with pip (Alternative)
 ```bash
-cd yolo-training
+cd edge-training
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -121,7 +123,7 @@ pytest service/preprocessing/tests/ -v
 ## 📂 Project Structure
 
 ```text
-yolo-training/
+edge-training/
 ├── api/                # HTTP Layer (FastAPI)
 │   ├── routes.py       # API Endpoints
 │   ├── schemas.py      # Pydantic Models
