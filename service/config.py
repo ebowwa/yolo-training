@@ -4,7 +4,71 @@ Type-safe configuration for all service operations.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional
+
+
+class ModelRegistry:
+    """
+    Centralized registry for YOLO model paths.
+    
+    All model path references should go through this registry to ensure
+    consistency and make model management easier.
+    
+    Usage:
+        from service.config import ModelRegistry
+        
+        # Get a specific model
+        path = ModelRegistry.get_path("yolov8m.pt")  # -> "resources/yolov8m.pt"
+        
+        # Use the default model
+        path = ModelRegistry.get_path(ModelRegistry.DEFAULT)
+        
+        # List available models
+        models = ModelRegistry.list_available()
+    """
+    
+    MODELS_DIR = "resources"
+    DEFAULT = "yolov8m.pt"
+    
+    @classmethod
+    def get_path(cls, model_name: str) -> str:
+        """
+        Get the full path for a model by name.
+        
+        Args:
+            model_name: Name of the model file (e.g., "yolov8m.pt")
+            
+        Returns:
+            Full path to the model (e.g., "resources/yolov8m.pt")
+        """
+        # If already a full path, return as-is
+        if "/" in model_name or "\\" in model_name:
+            return model_name
+        return f"{cls.MODELS_DIR}/{model_name}"
+    
+    @classmethod
+    def get_default_path(cls) -> str:
+        """Get the path to the default model."""
+        return cls.get_path(cls.DEFAULT)
+    
+    @classmethod
+    def list_available(cls) -> List[str]:
+        """
+        List all available .pt model files in the models directory.
+        
+        Returns:
+            List of model filenames (e.g., ["yolov8m.pt", "pothole.pt"])
+        """
+        models_path = Path(cls.MODELS_DIR)
+        if not models_path.exists():
+            return []
+        return [f.name for f in models_path.glob("*.pt")]
+    
+    @classmethod
+    def exists(cls, model_name: str) -> bool:
+        """Check if a model exists in the registry."""
+        return Path(cls.get_path(model_name)).exists()
 
 
 @dataclass
@@ -26,7 +90,11 @@ class TrainingConfig:
     project: str = "runs/train"
     name: str = "yolo_train"
     weights: Optional[str] = None  # Custom pretrained weights path
-    base_model: str = "yolov8m.pt"  # Base model to use
+    base_model: str = None  # Base model, defaults to ModelRegistry.DEFAULT
+    
+    def __post_init__(self):
+        if self.base_model is None:
+            self.base_model = ModelRegistry.get_default_path()
 
 
 @dataclass

@@ -527,3 +527,267 @@ class FeatureDistillationLoss(nn.Module):
             total_loss += F.mse_loss(s_norm, t_norm)
         
         return total_loss / len(self.projections)
+
+
+# =============================================================================
+# Interactive Counting (arxiv:2309.05277)
+# =============================================================================
+
+from dataclasses import dataclass
+
+@dataclass
+class RangeFeedback:
+    """
+    User feedback for a region of the density map.
+    
+    Based on: "Interactive Class-Agnostic Object Counting" (arxiv:2309.05277)
+    
+    The user selects a region and specifies a count range (e.g., "this area has 5-10 objects").
+    """
+    # Region bounds (normalized 0-1)
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+    # User-specified count range
+    min_count: int
+    max_count: int
+    # Optional: confidence weight for this feedback
+    weight: float = 1.0
+
+
+class InteractiveCountingLoss(nn.Module):
+    """
+    Adaptation Loss for Interactive Class-Agnostic Object Counting.
+    
+    Based on: "Interactive Class-Agnostic Object Counting" (arxiv:2309.05277)
+    
+    This loss enables real-time adaptation of a counting model based on user feedback.
+    The user provides feedback as count ranges for specific regions, and the loss
+    penalizes predictions outside those ranges.
+    
+    Key insight: Uses a "soft boundary" penalty that:
+    - Is 0 when predicted count is within [min_count, max_count]
+    - Increases smoothly as the prediction moves outside the range
+    
+    Example:
+        feedback = [
+            RangeFeedback(x1=0.2, y1=0.3, x2=0.5, y2=0.6, min_count=5, max_count=10),
+            RangeFeedback(x1=0.7, y1=0.7, x2=0.9, y2=0.9, min_count=0, max_count=2),
+        ]
+        loss = InteractiveCountingLoss()
+        adaptation_loss = loss(density_map, feedback)
+        adaptation_loss.backward()
+    """
+    
+    def __init__(self, margin: float = 0.5, reduction: str = 'mean'):
+        """
+        Args:
+            margin: Soft margin around the count range boundaries.
+                    Larger values = smoother penalty gradient.
+            reduction: 'mean', 'sum', or 'none'
+        """
+        super().__init__()
+        self.margin = margin
+        self.reduction = reduction
+    
+    def forward(
+        self, 
+        density_map: torch.Tensor,  # (B, 1, H, W) or (1, H, W) or (H, W)
+        feedback: List[RangeFeedback],
+    ) -> torch.Tensor:
+        """
+        Compute adaptation loss based on user feedback.
+        
+        Args:
+            density_map: Predicted density map
+            feedback: List of RangeFeedback from user
+        
+        Returns:
+            Scalar loss tensor (differentiable)
+        """
+        if len(feedback) == 0:
+            return torch.tensor(0.0, device=density_map.device, requires_grad=True)
+        
+        # Ensure 4D: (B, 1, H, W)
+        if density_map.dim() == 2:
+            density_map = density_map.unsqueeze(0).unsqueeze(0)
+        elif density_map.dim() == 3:
+            density_map = density_map.unsqueeze(0)
+        
+        B, C, H, W = density_map.shape
+        losses = []
+        
+        for fb in feedback:
+            # Convert normalized coords to pixel coords
+            px1 = int(fb.x1 * W)
+            py1 = int(fb.y1 * H)
+            px2 = int(fb.x2 * W)
+            py2 = int(fb.y2 * H)
+            
+            # Clamp to valid range
+            px1, px2 = max(0, px1), min(W, px2)
+            py1, py2 = max(0, py1), min(H, py2)
+            
+            if px2 <= px1 or py2 <= py1:
+                continue
+            
+            # Extract region and compute count (sum of density)
+            region = density_map[:, :, py1:py2, px1:px2]
+            predicted_count = region.sum()
+            
+            # Soft boundary loss
+            # Loss = 0 if min_count <= pred <= max_count
+            # Loss = (pred - max_count)^2 if pred > max_count
+            # Loss = (min_count - pred)^2 if pred < min_count
+            min_c = float(fb.min_count) - self.margin
+            max_c = float(fb.max_count) + self.margin
+            
+            if predicted_count < min_c:
+                region_loss = (min_c - predicted_count) ** 2
+            elif predicted_count > max_c:
+                region_loss = (predicted_count - max_c) ** 2
+            else:
+                region_loss = torch.tensor(0.0, device=density_map.device)
+            
+            losses.append(region_loss * fb.weight)
+        
+        if len(losses) == 0:
+            return torch.tensor(0.0, device=density_map.device, requires_grad=True)
+        
+        stacked = torch.stack(losses)
+        
+        if self.reduction == 'mean':
+            return stacked.mean()
+        elif self.reduction == 'sum':
+            return stacked.sum()
+        else:
+            return stacked
+
+
+class CountingRefinementAdapter(nn.Module):
+    """
+    Refinement Adapter for Interactive Counting.
+    
+    Based on: "Interactive Class-Agnostic Object Counting" (arxiv:2309.05277)
+    
+    A lightweight adapter module that can be attached to any density-based counter.
+    Only the parameters in this adapter are updated during interactive adaptation,
+    leaving the base model frozen.
+    
+    Architecture:
+        Input density map -> Conv layers -> Residual refinement -> Output density map
+    
+    Example:
+        base_model = DensityHead(...)  # Frozen during adaptation
+        adapter = CountingRefinementAdapter(in_channels=1)
+        
+        # Inference with refinement
+        density = base_model(features)
+        refined_density = adapter(density)
+        
+        # Only adapter params are updated
+        optimizer = torch.optim.Adam(adapter.parameters(), lr=0.001)
+    """
+    
+    def __init__(
+        self, 
+        in_channels: int = 1, 
+        hidden_channels: int = 32,
+        num_layers: int = 3,
+        residual: bool = True,
+    ):
+        """
+        Args:
+            in_channels: Input density map channels (usually 1)
+            hidden_channels: Hidden layer channels
+            num_layers: Number of refinement conv layers
+            residual: If True, output = input + refinement (residual learning)
+        """
+        super().__init__()
+        self.residual = residual
+        
+        layers = []
+        
+        # First layer: expand channels
+        layers.append(nn.Conv2d(in_channels, hidden_channels, 3, padding=1))
+        layers.append(nn.ReLU(inplace=True))
+        
+        # Middle layers
+        for _ in range(num_layers - 2):
+            layers.append(nn.Conv2d(hidden_channels, hidden_channels, 3, padding=1))
+            layers.append(nn.ReLU(inplace=True))
+        
+        # Final layer: compress back to density
+        layers.append(nn.Conv2d(hidden_channels, in_channels, 3, padding=1))
+        
+        self.refine = nn.Sequential(*layers)
+        
+        # Initialize to near-identity (small refinements initially)
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize weights for small initial refinement."""
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.normal_(m.weight, std=0.01)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+    
+    def forward(self, density: torch.Tensor) -> torch.Tensor:
+        """
+        Refine a density map.
+        
+        Args:
+            density: Input density map (B, 1, H, W)
+        
+        Returns:
+            Refined density map (B, 1, H, W)
+        """
+        refinement = self.refine(density)
+        
+        if self.residual:
+            # Residual connection: output = input + small refinement
+            return density + refinement
+        else:
+            return refinement
+    
+    def adapt(
+        self,
+        density: torch.Tensor,
+        feedback: List[RangeFeedback],
+        lr: float = 0.001,
+        steps: int = 10,
+    ) -> torch.Tensor:
+        """
+        Perform quick adaptation based on user feedback.
+        
+        This is a convenience method that runs a few gradient steps
+        to adapt the refinement module to the user's feedback.
+        
+        Args:
+            density: Input density map from base model (detached)
+            feedback: User feedback as list of RangeFeedback
+            lr: Learning rate for adaptation
+            steps: Number of gradient steps
+        
+        Returns:
+            Refined density map after adaptation
+        """
+        loss_fn = InteractiveCountingLoss()
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        
+        density = density.detach()  # Don't backprop into base model
+        
+        for _ in range(steps):
+            optimizer.zero_grad()
+            refined = self(density)
+            loss = loss_fn(refined, feedback)
+            if loss.item() > 0:
+                loss.backward()
+                optimizer.step()
+            else:
+                break  # Perfect fit, stop early
+        
+        return self(density)
+

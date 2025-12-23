@@ -1,6 +1,24 @@
+NOTES:
+
+- i moved the yolo model to `yolo-training/resources/yolov8m.pt`
+- we added a swift client
+
 # YOLO Training & Inference Service
 
 A modular, three-layer ML service for training, validating, and deploying YOLO models. Supports **YOLOv5, v8, v9, v10, v11, and YOLO-World** via the Ultralytics library. Includes a composable spatial inference pipeline for real-time detection on wearables.
+
+## 🌐 Hybrid AI: Cloud + Local Edge
+
+This system is designed to bridge the gap between high-power cloud computing and low-latency edge devices (glasses, phones, IoT).
+
+- **Cloud/Server Role (The Brain)**: 
+  - **Heavy Training**: Run multi-GPU training jobs for large backbone models.
+  - **High-Accuracy Inference**: Serve complex models via the FastAPI `/api/v1/infer` endpoint for remote devices.
+  - **PEFT Training**: Fine-tune "Personal Object" models with LoRA/BitFit using minimal data from the edge.
+- **Local Edge Role (The Reflex)**:
+  - **Lightweight SLAM**: Track 3D world coordinates and camera pose locally without internet latency.
+  - **Quantized Export**: Use the `ExportService` to shrink models into **NCNN, TFLite, or CoreML** for 8-bit on-device execution.
+  - **Spatial Anchoring**: "Lock" cloud detections to the 3D world so they remain stable even when the user looks away.
 
 ## 🏗 Architecture
 
@@ -16,12 +34,13 @@ For more details, see [ARCHITECTURE.md](ARCHITECTURE.md).
 ## 🚀 Key Features
 
 - **Multi-YOLO Support**: Works with YOLOv5, v8, v9, v10, v11, and YOLO-World models.
+- **3D Spatial Intelligence (SLAM)**: Real-time 6DoF camera pose estimation and 3D object anchoring for wearables.
+- **PEFT / Personal Learning**: Train custom "Private" models with 5-10 images using **LoRA** (Low-Rank Adaptation).
 - **Automated Dataset Prep**: Integration with Kaggle for dataset downloads and automatic YOLO structure detection.
 - **Preprocessing Pipeline**: Composable cleaners (corrupted image detection, bbox validation) and transforms (augmentation).
-- **Training Management**: Synchronous and resumable training with custom weight support.
-- **Inference API**: High-performance image inference with configurable confidence and IOU thresholds.
-- **Spatial Inference (SLAM)**: Chain YOLO inference with lightweight SLAM for egocentric video from glasses/phones.
-- **Deployment-Ready Exports**: Export trained models to NCNN, ONNX, CoreML, and TFLite formats.
+- **Deployment-Ready Exports**: Export trained models to NCNN, ONNX, CoreML, and TFLite formats for edge hardware.
+- **Interactive Counting**: Human-in-the-loop density refinement based on [arxiv:2309.05277](https://arxiv.org/abs/2309.05277).
+- **Advanced AI Capabilities**: Gaze-prioritized learning and dense counting with SimOTA. See [CAPABILITIES.md](docs/CAPABILITIES.md).
 
 ## 🛠 Setup
 
@@ -68,7 +87,7 @@ from pipeline import SpatialInferencePipeline, AttachablePipeline, FunctionStage
 
 # High-level: YOLO + SLAM spatial detection
 pipeline = SpatialInferencePipeline(
-    model_path="weights/yolov8m.pt",  # or yolov11, yolov5, etc.
+    model_path="resources/yolov8m.pt",  # or yolov11, yolov5, etc.
     enable_slam=True,
     imu_enabled=True,
 )

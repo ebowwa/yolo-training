@@ -31,6 +31,7 @@ __version__ = "0.1.0"
 
 # Configuration dataclasses
 from .config import (
+    ModelRegistry,
     DatasetConfig,
     Detection,
     ExportConfig,
@@ -55,6 +56,7 @@ __all__ = [
     # Version
     "__version__",
     # Configs
+    "ModelRegistry",
     "DatasetConfig",
     "TrainingConfig",
     "InferenceConfig",

@@ -178,7 +178,7 @@ class SpatialInferencePipeline:
     
     Example:
         pipeline = SpatialInferencePipeline(
-            model_path="weights/pothole.pt",
+            model_path="resources/pothole.pt",
             enable_slam=True,
             imu_enabled=True,
         )

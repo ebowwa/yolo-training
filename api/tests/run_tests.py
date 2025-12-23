@@ -8,6 +8,10 @@ import sys
 import os
 from pathlib import Path
 
+# Add project root to path for service imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
 # Add api directory to path
 api_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(api_dir))
@@ -25,6 +29,7 @@ from schemas import (
     PreprocessingRequest, PreprocessingResponse,
     HealthResponse,
 )
+from service.config import ModelRegistry
 
 passed = 0
 failed = 0
@@ -83,7 +88,7 @@ def test_training_request_defaults():
     assert req.imgsz == 512
     assert req.batch == 32
     assert req.device == "0"
-    assert req.base_model == "yolov8m.pt"
+    assert req.base_model == ModelRegistry.get_default_path()
 
 
 test("TrainingRequest defaults", test_training_request_defaults)

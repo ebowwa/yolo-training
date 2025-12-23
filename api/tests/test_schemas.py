@@ -17,6 +17,7 @@ from api.schemas import (
     PreprocessingRequest, PreprocessingResponse,
     HealthResponse,
 )
+from service.config import ModelRegistry
 
 
 class TestDatasetSchemas:
@@ -62,7 +63,7 @@ class TestTrainingSchemas:
         assert request.project == "runs/train"
         assert request.name == "yolo_train"
         assert request.weights is None
-        assert request.base_model == "yolov8m.pt"
+        assert request.base_model == ModelRegistry.get_default_path()
 
     def test_training_request_custom_values(self):
         """Test TrainingRequest with custom values."""

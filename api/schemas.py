@@ -5,6 +5,8 @@ Pydantic schemas for API request/response models.
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field
 
+from service.config import ModelRegistry
+
 
 # === Dataset Schemas ===
 
@@ -34,7 +36,7 @@ class TrainingRequest(BaseModel):
     project: str = Field("runs/train")
     name: str = Field("yolo_train")
     weights: Optional[str] = Field(None, description="Custom weights path")
-    base_model: str = Field("yolov8m.pt")
+    base_model: str = Field(default=ModelRegistry.get_default_path())
 
 
 class TrainingResponse(BaseModel):

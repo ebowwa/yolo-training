@@ -23,6 +23,9 @@ from .losses import (
     DistillationLoss,
     FeatureDistillationLoss,
     SimOTAAssigner,
+    InteractiveCountingLoss,
+    CountingRefinementAdapter,
+    RangeFeedback,
 )
 from .peft import (
     LoRALinear,
@@ -48,6 +51,8 @@ __all__ = [
     "bbox_iou", "CIoULoss", "FocalLoss", "BCEWithLogitsFocalLoss",
     "DetectionLoss", "DensityLoss", "DistillationLoss", "FeatureDistillationLoss",
     "SimOTAAssigner",
+    # Interactive Counting (arxiv:2309.05277)
+    "InteractiveCountingLoss", "CountingRefinementAdapter", "RangeFeedback",
     # PEFT
     "LoRALinear", "Adapter", "apply_lora", "apply_bitfit",
     "freeze_except", "count_parameters", "get_trainable_parameters",

@@ -16,10 +16,13 @@ service/
     └── test_services.py
 """
 
+import sys
+
 # Test 1: Import all config classes
 print("\n[1/5] Testing config imports...")
 try:
     from service.config import (
+        ModelRegistry,
         DatasetConfig,
         TrainingConfig,
         InferenceConfig,
@@ -32,6 +35,15 @@ try:
         ValidationResult,
     )
     print("  ✓ All config classes imported successfully")
+    
+    # Test ModelRegistry
+    print("\n  Testing ModelRegistry...")
+    assert ModelRegistry.MODELS_DIR == "resources", "ModelRegistry.MODELS_DIR should be 'resources'"
+    assert ModelRegistry.DEFAULT == "yolov8m.pt", "ModelRegistry.DEFAULT should be 'yolov8m.pt'"
+    assert ModelRegistry.get_path("test.pt") == "resources/test.pt", "get_path should prepend MODELS_DIR"
+    assert ModelRegistry.get_path("/custom/path.pt") == "/custom/path.pt", "get_path should pass through full paths"
+    assert ModelRegistry.get_default_path() == "resources/yolov8m.pt", "get_default_path should return full default path"
+    print("  ✓ ModelRegistry: MODELS_DIR, DEFAULT, get_path, get_default_path, list_available, exists")
 except Exception as e:
     print(f"  ✗ Failed: {e}")
     sys.exit(1)
