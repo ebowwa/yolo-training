@@ -158,49 +158,248 @@ class BCEWithLogitsFocalLoss(nn.Module):
         return loss
 
 
+class SimOTAAssigner:
+    """
+    Simplified OTA (Optimal Transport Assignment) for target assignment.
+    
+    Based on YOLOX: https://arxiv.org/abs/2107.08430
+    Assigns ground truth boxes to predictions based on a cost matrix.
+    """
+    
+    def __init__(self, center_radius: float = 2.5, topk: int = 10):
+        """
+        Args:
+            center_radius: Radius for center prior (in grid cells)
+            topk: Number of top candidates to consider per GT
+        """
+        self.center_radius = center_radius
+        self.topk = topk
+    
+    def assign(
+        self,
+        pred_boxes: torch.Tensor,      # (N, 4) predicted boxes in xywh
+        pred_scores: torch.Tensor,     # (N, nc) predicted class scores
+        gt_boxes: torch.Tensor,        # (M, 4) ground truth boxes in xywh
+        gt_classes: torch.Tensor,      # (M,) ground truth class indices
+        anchor_centers: torch.Tensor,  # (N, 2) anchor point centers
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Perform SimOTA assignment.
+        
+        Returns:
+            matched_gt_idx: (K,) indices of matched GT for each positive prediction
+            matched_pred_idx: (K,) indices of positive predictions
+            fg_mask: (N,) boolean mask of foreground predictions
+        """
+        device = pred_boxes.device
+        n_pred = pred_boxes.shape[0]
+        n_gt = gt_boxes.shape[0]
+        
+        if n_gt == 0:
+            return (
+                torch.empty(0, dtype=torch.long, device=device),
+                torch.empty(0, dtype=torch.long, device=device),
+                torch.zeros(n_pred, dtype=torch.bool, device=device),
+            )
+        
+        # Step 1: Filter by center prior - predictions near GT centers
+        gt_centers = gt_boxes[:, :2]  # (M, 2)
+        
+        # Compute distances from each prediction to each GT center
+        distances = torch.cdist(anchor_centers, gt_centers)  # (N, M)
+        
+        # Get candidates within radius
+        is_in_center = distances < self.center_radius
+        candidate_mask = is_in_center.any(dim=1)  # (N,)
+        
+        if not candidate_mask.any():
+            # Fallback: use all predictions
+            candidate_mask = torch.ones(n_pred, dtype=torch.bool, device=device)
+        
+        candidate_idx = candidate_mask.nonzero(as_tuple=True)[0]
+        n_candidates = len(candidate_idx)
+        
+        # Step 2: Compute cost matrix for candidates
+        cand_pred_boxes = pred_boxes[candidate_idx]  # (C, 4)
+        cand_pred_scores = pred_scores[candidate_idx]  # (C, nc)
+        
+        # IoU cost
+        iou = bbox_iou(
+            cand_pred_boxes.unsqueeze(1),  # (C, 1, 4)
+            gt_boxes.unsqueeze(0),          # (1, M, 4)
+            xywh=True
+        ).squeeze(-1)  # (C, M)
+        iou_cost = -torch.log(iou + 1e-8)
+        
+        # Classification cost
+        gt_onehot = F.one_hot(gt_classes, cand_pred_scores.shape[1]).float()  # (M, nc)
+        cls_cost = F.binary_cross_entropy_with_logits(
+            cand_pred_scores.unsqueeze(1).expand(-1, n_gt, -1),
+            gt_onehot.unsqueeze(0).expand(n_candidates, -1, -1),
+            reduction='none'
+        ).sum(dim=-1)  # (C, M)
+        
+        # Total cost
+        cost = iou_cost + cls_cost * 3.0
+        
+        # Step 3: Dynamic k selection based on IoU
+        matching_matrix = torch.zeros(n_candidates, n_gt, dtype=torch.bool, device=device)
+        
+        for gt_idx in range(n_gt):
+            gt_iou = iou[:, gt_idx]
+            
+            # Dynamic k: use IoU to determine how many to match
+            dynamic_k = max(1, int(gt_iou.sum().item()))
+            dynamic_k = min(dynamic_k, self.topk, n_candidates)
+            
+            # Get top-k lowest cost candidates for this GT
+            _, topk_idx = cost[:, gt_idx].topk(dynamic_k, largest=False)
+            matching_matrix[topk_idx, gt_idx] = True
+        
+        # Step 4: Resolve conflicts (one prediction -> one GT)
+        # For predictions matching multiple GTs, keep the one with lowest cost
+        matched_count = matching_matrix.sum(dim=1)
+        conflicts = matched_count > 1
+        
+        if conflicts.any():
+            conflict_idx = conflicts.nonzero(as_tuple=True)[0]
+            for idx in conflict_idx:
+                matched_gts = matching_matrix[idx].nonzero(as_tuple=True)[0]
+                best_gt = matched_gts[cost[idx, matched_gts].argmin()]
+                matching_matrix[idx] = False
+                matching_matrix[idx, best_gt] = True
+        
+        # Step 5: Extract matches
+        fg_mask_candidates = matching_matrix.any(dim=1)
+        matched_gt_per_candidate = matching_matrix.float().argmax(dim=1)
+        
+        # Map back to original indices
+        fg_mask = torch.zeros(n_pred, dtype=torch.bool, device=device)
+        fg_mask[candidate_idx[fg_mask_candidates]] = True
+        
+        matched_pred_idx = candidate_idx[fg_mask_candidates]
+        matched_gt_idx = matched_gt_per_candidate[fg_mask_candidates]
+        
+        return matched_gt_idx, matched_pred_idx, fg_mask
+
+
 class DetectionLoss(nn.Module):
     """
-    Combined loss for object detection.
+    Combined loss for object detection with SimOTA target assignment.
+    
     - Box loss: CIoU
     - Class loss: BCE with focal weighting
-    - Objectness loss: BCE
+    - Objectness loss: BCE (positive for assigned predictions)
     """
     
     def __init__(self, nc: int = 80, box_weight: float = 7.5, 
-                 cls_weight: float = 0.5, obj_weight: float = 1.0):
+                 cls_weight: float = 0.5, obj_weight: float = 1.0,
+                 center_radius: float = 2.5, topk: int = 10):
         super().__init__()
         self.nc = nc
         self.box_weight = box_weight
         self.cls_weight = cls_weight
         self.obj_weight = obj_weight
         
-        self.ciou_loss = CIoULoss(reduction='mean')
-        self.cls_loss = BCEWithLogitsFocalLoss(reduction='mean')
-        self.obj_loss = nn.BCEWithLogitsLoss(reduction='mean')
+        self.ciou_loss = CIoULoss(reduction='none')  # Per-sample loss
+        self.cls_loss = BCEWithLogitsFocalLoss(reduction='none')
+        self.obj_loss = nn.BCEWithLogitsLoss(reduction='none')
+        
+        self.assigner = SimOTAAssigner(center_radius=center_radius, topk=topk)
     
-    def forward(self, pred: torch.Tensor, targets: dict) -> Tuple[torch.Tensor, dict]:
+    def forward(
+        self, 
+        pred: torch.Tensor,           # (B, N, 4+nc+1) or (B, N, 4+reg_max*4+nc)
+        gt_boxes: torch.Tensor,       # (B, M, 4) ground truth boxes
+        gt_classes: torch.Tensor,     # (B, M) ground truth classes
+        anchor_centers: torch.Tensor, # (N, 2) anchor centers
+    ) -> Tuple[torch.Tensor, dict]:
         """
+        Compute detection loss with SimOTA assignment.
+        
         Args:
-            pred: Detection head output
-            targets: Dict with 'boxes', 'classes', 'obj_mask' keys
+            pred: Predictions (B, N, C) where C = 4 + nc + 1 (box, cls, obj)
+            gt_boxes: Ground truth boxes (B, M, 4) in xywh format
+            gt_classes: Ground truth class indices (B, M)
+            anchor_centers: Anchor point centers (N, 2)
         
         Returns:
             total_loss, loss_dict
         """
-        # Placeholder - full implementation requires target assignment
-        # This shows the structure
-        loss_box = self.ciou_loss(pred[..., :4], targets['boxes'])
-        loss_cls = self.cls_loss(pred[..., 4:4+self.nc], targets['classes'])
-        loss_obj = self.obj_loss(pred[..., -1], targets['obj_mask'])
+        device = pred.device
+        batch_size = pred.shape[0]
+        n_pred = pred.shape[1]
         
-        total = (self.box_weight * loss_box + 
-                 self.cls_weight * loss_cls + 
-                 self.obj_weight * loss_obj)
+        # Parse predictions
+        pred_boxes = pred[..., :4]          # (B, N, 4)
+        pred_cls = pred[..., 4:4+self.nc]   # (B, N, nc)
+        pred_obj = pred[..., -1]            # (B, N)
+        
+        total_box_loss = torch.tensor(0.0, device=device)
+        total_cls_loss = torch.tensor(0.0, device=device)
+        total_obj_loss = torch.tensor(0.0, device=device)
+        n_pos = 0
+        
+        for b in range(batch_size):
+            # Get valid GTs for this image (filter padded zeros)
+            valid_mask = gt_boxes[b].sum(dim=-1) > 0
+            b_gt_boxes = gt_boxes[b][valid_mask]  # (m, 4)
+            b_gt_classes = gt_classes[b][valid_mask]  # (m,)
+            
+            b_pred_boxes = pred_boxes[b]  # (N, 4)
+            b_pred_cls = pred_cls[b]      # (N, nc)
+            b_pred_obj = pred_obj[b]      # (N,)
+            
+            # Perform assignment
+            matched_gt_idx, matched_pred_idx, fg_mask = self.assigner.assign(
+                b_pred_boxes,
+                b_pred_cls.sigmoid(),  # Use sigmoid scores for cost
+                b_gt_boxes,
+                b_gt_classes,
+                anchor_centers,
+            )
+            
+            n_matched = len(matched_pred_idx)
+            n_pos += n_matched
+            
+            # Objectness loss (all predictions)
+            obj_targets = fg_mask.float()
+            total_obj_loss += self.obj_loss(b_pred_obj, obj_targets).mean()
+            
+            if n_matched == 0:
+                continue
+            
+            # Box loss (matched predictions only)
+            matched_pred_boxes = b_pred_boxes[matched_pred_idx]
+            matched_gt_boxes = b_gt_boxes[matched_gt_idx]
+            box_loss = self.ciou_loss(matched_pred_boxes, matched_gt_boxes)
+            total_box_loss += box_loss.mean()
+            
+            # Classification loss (matched predictions only)
+            matched_pred_cls = b_pred_cls[matched_pred_idx]
+            cls_targets = F.one_hot(
+                b_gt_classes[matched_gt_idx], self.nc
+            ).float()
+            cls_loss = F.binary_cross_entropy_with_logits(
+                matched_pred_cls, cls_targets, reduction='none'
+            ).sum(dim=-1)
+            total_cls_loss += cls_loss.mean()
+        
+        # Normalize by batch and number of positives
+        n_pos = max(1, n_pos)
+        box_loss = total_box_loss / batch_size
+        cls_loss = total_cls_loss / batch_size
+        obj_loss = total_obj_loss / batch_size
+        
+        total = (self.box_weight * box_loss + 
+                 self.cls_weight * cls_loss + 
+                 self.obj_weight * obj_loss)
         
         return total, {
-            'box_loss': loss_box.item(),
-            'cls_loss': loss_cls.item(),
-            'obj_loss': loss_obj.item(),
+            'box_loss': box_loss.item(),
+            'cls_loss': cls_loss.item(),
+            'obj_loss': obj_loss.item(),
+            'n_positives': n_pos,
             'total': total.item(),
         }
 

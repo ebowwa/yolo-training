@@ -23,7 +23,7 @@ from service.slam import SlamService, DevicePose, SpatialAnchor
 
 @dataclass
 class SpatialDetection:
-    """A detection with spatial anchoring."""
+    """A detection with spatial anchoring and gaze weighting."""
     # Original detection
     class_id: int
     class_name: str
@@ -34,7 +34,11 @@ class SpatialDetection:
     # Spatial info
     anchor_id: Optional[int] = None
     spatial_coords: Optional[Tuple[float, float]] = None
+    world_coords: Optional[Tuple[float, float, float]] = None
     is_new: bool = True  # First time seeing this object
+    
+    # Gaze-aware weighting
+    gaze_boost: float = 1.0  # Multiplier based on gaze proximity
 
 
 @dataclass 
@@ -134,7 +138,18 @@ class SlamAnchorStage(PipelineStage):
         spatial_detections = []
         
         for det in detections:
-            anchor = self.slam.anchor_detection(det, pose)
+            # Check if we've seen this object before (re-identification)
+            existing_anchor = self.slam.find_anchor_by_bbox(det.bbox)
+            
+            if existing_anchor is not None:
+                # Update existing anchor
+                self.slam.update_anchor(existing_anchor.id, det)
+                is_new = False
+                anchor = existing_anchor
+            else:
+                # Create new anchor
+                anchor = self.slam.anchor_detection(det, pose)
+                is_new = True
             
             spatial_det = SpatialDetection(
                 class_id=det.class_id,
@@ -144,7 +159,8 @@ class SlamAnchorStage(PipelineStage):
                 bbox_normalized=det.bbox_normalized,
                 anchor_id=anchor.id,
                 spatial_coords=anchor.relative_coords,
-                is_new=True,  # TODO: track if seen before
+                world_coords=anchor.world_coords,
+                is_new=is_new,
             )
             spatial_detections.append(spatial_det)
         
