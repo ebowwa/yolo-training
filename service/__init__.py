@@ -52,6 +52,15 @@ from .training_service import TrainingService
 from .validation_service import ValidationService
 from .slam import SlamService, DevicePose, SpatialAnchor
 from .optimization import InferenceOptimizer, optimize_for_inference
+from .callbacks import (
+    TrainingCallback,
+    CallbackManager,
+    TensorBoardCallback,
+    WandBCallback,
+    EarlyStoppingCallback,
+    MetricsLoggerCallback,
+    create_default_callbacks,
+)
 
 __all__ = [
     # Version
@@ -82,4 +91,12 @@ __all__ = [
     # Optimization
     "InferenceOptimizer",
     "optimize_for_inference",
+    # Callbacks
+    "TrainingCallback",
+    "CallbackManager",
+    "TensorBoardCallback",
+    "WandBCallback",
+    "EarlyStoppingCallback",
+    "MetricsLoggerCallback",
+    "create_default_callbacks",
 ]
