@@ -128,6 +128,64 @@ class PreprocessingResponse(BaseModel):
     errors: List[str] = []
 
 
+# === SLAM Schemas ===
+
+class ImuData(BaseModel):
+    """IMU sensor data for pose estimation."""
+    accel_x: float = Field(0.0, description="Accelerometer X")
+    accel_y: float = Field(0.0, description="Accelerometer Y")
+    accel_z: float = Field(0.0, description="Accelerometer Z")
+    gyro_x: float = Field(0.0, description="Gyroscope X")
+    gyro_y: float = Field(0.0, description="Gyroscope Y")
+    gyro_z: float = Field(0.0, description="Gyroscope Z")
+
+
+class SlamPoseRequest(BaseModel):
+    """Request to update device pose from a frame."""
+    imu_data: Optional[ImuData] = None
+
+
+class DevicePoseResponse(BaseModel):
+    """Device pose (position/rotation) response."""
+    timestamp: float
+    delta_x: float
+    delta_y: float
+    rotation_deg: float
+
+
+class AnchorDetectionRequest(BaseModel):
+    """Request to create a spatial anchor from a detection."""
+    class_name: str = Field(..., description="Class name of detection")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Detection confidence")
+    bbox: List[float] = Field(..., description="Bounding box [x1, y1, x2, y2]")
+
+
+class SpatialAnchorResponse(BaseModel):
+    """Spatial anchor response."""
+    id: int
+    label: str
+    relative_coords: List[float]  # [x, y]
+    confidence: float
+
+
+class SlamMapResponse(BaseModel):
+    """Response with current spatial map."""
+    anchors: List[SpatialAnchorResponse]
+    anchor_count: int
+
+
+class SlamConfigRequest(BaseModel):
+    """Configuration for SLAM service initialization."""
+    imu_enabled: bool = Field(False, description="Enable IMU sensor fusion")
+
+
+class SlamStatusResponse(BaseModel):
+    """SLAM service status."""
+    initialized: bool
+    imu_enabled: bool
+    active_anchors: int
+
+
 # === Health Check ===
 
 class HealthResponse(BaseModel):

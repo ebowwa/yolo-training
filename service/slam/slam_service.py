@@ -5,7 +5,7 @@ Provides spatial awareness, camera pose estimation, and 3D mapping integration.
 
 import logging
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Any
+from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 logging.basicConfig(level=logging.INFO)

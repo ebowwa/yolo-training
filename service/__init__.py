@@ -49,7 +49,7 @@ from export_service import ExportService
 from inference_service import InferenceService
 from training_service import TrainingService
 from validation_service import ValidationService
-from slam_service import SlamService
+from slam import SlamService, DevicePose, SpatialAnchor
 
 __all__ = [
     # Version
@@ -66,6 +66,9 @@ __all__ = [
     "InferenceResult",
     "TrainingResult",
     "ValidationResult",
+    # SLAM Types
+    "DevicePose",
+    "SpatialAnchor",
     # Services
     "DatasetService",
     "TrainingService",
