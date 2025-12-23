@@ -26,10 +26,30 @@ class ModelRegistry:
         
         # List available models
         models = ModelRegistry.list_available()
+        
+        # Auto-download if missing (inspired by RF-DETR)
+        path = ModelRegistry.download_if_missing("yolov8n.pt")
     """
     
     MODELS_DIR = "resources"
     DEFAULT = "yolov8m.pt"
+    
+    # Hosted models for auto-download (inspired by RF-DETR pattern)
+    # URLs for official Ultralytics YOLO models
+    HOSTED_MODELS = {
+        # YOLOv8 variants
+        "yolov8n.pt": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt",
+        "yolov8s.pt": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8s.pt",
+        "yolov8m.pt": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8m.pt",
+        "yolov8l.pt": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8l.pt",
+        "yolov8x.pt": "https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8x.pt",
+        # YOLOv11 variants
+        "yolo11n.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11n.pt",
+        "yolo11s.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11s.pt",
+        "yolo11m.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11m.pt",
+        "yolo11l.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11l.pt",
+        "yolo11x.pt": "https://github.com/ultralytics/assets/releases/download/v8.3.0/yolo11x.pt",
+    }
     
     @classmethod
     def get_path(cls, model_name: str) -> str:
@@ -66,9 +86,63 @@ class ModelRegistry:
         return [f.name for f in models_path.glob("*.pt")]
     
     @classmethod
+    def list_downloadable(cls) -> List[str]:
+        """List all models available for download."""
+        return list(cls.HOSTED_MODELS.keys())
+    
+    @classmethod
     def exists(cls, model_name: str) -> bool:
         """Check if a model exists in the registry."""
         return Path(cls.get_path(model_name)).exists()
+    
+    @classmethod
+    def download_if_missing(cls, model_name: str, force: bool = False) -> str:
+        """
+        Download a model if it's not present locally.
+        
+        Inspired by RF-DETR's download_pretrain_weights pattern.
+        
+        Args:
+            model_name: Name of the model to download (e.g., "yolov8n.pt")
+            force: If True, re-download even if file exists
+            
+        Returns:
+            Path to the downloaded model
+            
+        Raises:
+            ValueError: If model is not in HOSTED_MODELS
+        """
+        import logging
+        import urllib.request
+        
+        model_path = cls.get_path(model_name)
+        
+        # Already exists and not forcing re-download
+        if cls.exists(model_name) and not force:
+            logging.info(f"Model already exists: {model_path}")
+            return model_path
+        
+        # Check if model is available for download
+        if model_name not in cls.HOSTED_MODELS:
+            available = ", ".join(cls.HOSTED_MODELS.keys())
+            raise ValueError(
+                f"Model '{model_name}' not found in HOSTED_MODELS. "
+                f"Available: {available}"
+            )
+        
+        # Ensure directory exists
+        Path(cls.MODELS_DIR).mkdir(parents=True, exist_ok=True)
+        
+        url = cls.HOSTED_MODELS[model_name]
+        logging.info(f"Downloading {model_name} from {url}...")
+        
+        try:
+            urllib.request.urlretrieve(url, model_path)
+            logging.info(f"Successfully downloaded: {model_path}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to download {model_name}: {e}")
+        
+        return model_path
 
 
 @dataclass

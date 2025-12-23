@@ -1,8 +1,3 @@
-NOTES:
-
-- i moved the yolo model to `yolo-training/resources/yolov8m.pt`
-- we added a swift client
-
 # YOLO Training & Inference Service
 
 A modular, three-layer ML service for training, validating, and deploying YOLO models. Supports **YOLOv5, v8, v9, v10, v11, and YOLO-World** via the Ultralytics library. Includes a composable spatial inference pipeline for real-time detection on wearables.

@@ -51,6 +51,7 @@ from .inference_service import InferenceService
 from .training_service import TrainingService
 from .validation_service import ValidationService
 from .slam import SlamService, DevicePose, SpatialAnchor
+from .optimization import InferenceOptimizer, optimize_for_inference
 
 __all__ = [
     # Version
@@ -78,4 +79,7 @@ __all__ = [
     "ValidationService",
     "ExportService",
     "SlamService",
+    # Optimization
+    "InferenceOptimizer",
+    "optimize_for_inference",
 ]
