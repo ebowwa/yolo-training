@@ -31,6 +31,11 @@ import pipeline as preprocessing_pipeline
 import cleaners
 import transforms
 
+# Import SLAM module
+_slam_dir = _service_dir / "slam"
+sys.path.insert(0, str(_slam_dir))
+from slam_service import SlamService, DevicePose, SpatialAnchor
+
 from schemas import (
     DatasetRequest, DatasetResponse,
     TrainingRequest, TrainingResponse,
@@ -38,7 +43,10 @@ from schemas import (
     ValidationRequest, ValidationResponse,
     ExportRequest, ExportResponse,
     PreprocessingRequest, PreprocessingResponse,
-    HealthResponse,
+    SlamPoseRequest, DevicePoseResponse,
+    AnchorDetectionRequest, SpatialAnchorResponse,
+    SlamMapResponse, SlamConfigRequest, SlamStatusResponse,
+    ImuData, HealthResponse,
 )
 
 router = APIRouter()
@@ -274,6 +282,165 @@ async def preprocess_dataset(request: PreprocessingRequest):
             labels_fixed=result.labels_fixed,
             images_augmented=result.images_augmented,
             errors=result.errors,
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# === SLAM ===
+
+# Global SLAM service instance
+_slam_service: SlamService = None
+
+
+def _get_slam_service(config: dict = None) -> SlamService:
+    """Get or create the SLAM service instance."""
+    global _slam_service
+    if _slam_service is None:
+        _slam_service = SlamService(config or {})
+    return _slam_service
+
+
+@router.post("/slam/init", response_model=SlamStatusResponse, tags=["SLAM"])
+async def initialize_slam(request: SlamConfigRequest):
+    """Initialize the SLAM service with configuration."""
+    global _slam_service
+    try:
+        config = {"imu_enabled": request.imu_enabled}
+        _slam_service = SlamService(config)
+        return SlamStatusResponse(
+            initialized=True,
+            imu_enabled=request.imu_enabled,
+            active_anchors=0,
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.get("/slam/status", response_model=SlamStatusResponse, tags=["SLAM"])
+async def get_slam_status():
+    """Get current SLAM service status."""
+    svc = _get_slam_service()
+    return SlamStatusResponse(
+        initialized=True,
+        imu_enabled=svc.imu_enabled,
+        active_anchors=len(svc.active_anchors),
+    )
+
+
+@router.post("/slam/pose", response_model=DevicePoseResponse, tags=["SLAM"])
+async def update_pose(
+    frame: UploadFile = File(...),
+    request: SlamPoseRequest = None,
+):
+    """Update device pose from frame (and optional IMU data)."""
+    import numpy as np
+    from PIL import Image
+    import io
+    
+    try:
+        svc = _get_slam_service()
+        
+        # Read frame
+        content = await frame.read()
+        image = Image.open(io.BytesIO(content))
+        frame_array = np.array(image)
+        
+        # Convert IMU data if provided
+        imu_dict = None
+        if request and request.imu_data:
+            imu_dict = {
+                "accel_x": request.imu_data.accel_x,
+                "accel_y": request.imu_data.accel_y,
+                "accel_z": request.imu_data.accel_z,
+                "gyro_x": request.imu_data.gyro_x,
+                "gyro_y": request.imu_data.gyro_y,
+                "gyro_z": request.imu_data.gyro_z,
+            }
+        
+        pose = svc.update_pose(frame_array, imu_dict)
+        
+        return DevicePoseResponse(
+            timestamp=pose.timestamp,
+            delta_x=pose.delta_x,
+            delta_y=pose.delta_y,
+            rotation_deg=pose.rotation_deg,
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.post("/slam/anchor", response_model=SpatialAnchorResponse, tags=["SLAM"])
+async def create_anchor(request: AnchorDetectionRequest):
+    """Create a spatial anchor from a detection."""
+    try:
+        svc = _get_slam_service()
+        
+        # Create a mock detection object for the service
+        class MockDetection:
+            def __init__(self, class_name, confidence, bbox):
+                self.class_name = class_name
+                self.confidence = confidence
+                self.bbox = bbox
+        
+        detection = MockDetection(
+            request.class_name,
+            request.confidence,
+            request.bbox,
+        )
+        
+        # Use current pose (or default)
+        pose = DevicePose(timestamp=0.0)
+        anchor = svc.anchor_detection(detection, pose)
+        
+        return SpatialAnchorResponse(
+            id=anchor.id,
+            label=anchor.label,
+            relative_coords=list(anchor.relative_coords),
+            confidence=anchor.confidence,
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.get("/slam/map", response_model=SlamMapResponse, tags=["SLAM"])
+async def get_spatial_map():
+    """Get the current spatial map of all anchored detections."""
+    try:
+        svc = _get_slam_service()
+        anchors = svc.get_active_map()
+        
+        return SlamMapResponse(
+            anchors=[
+                SpatialAnchorResponse(
+                    id=a.id,
+                    label=a.label,
+                    relative_coords=list(a.relative_coords),
+                    confidence=a.confidence,
+                )
+                for a in anchors
+            ],
+            anchor_count=len(anchors),
+        )
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@router.delete("/slam/reset", response_model=SlamStatusResponse, tags=["SLAM"])
+async def reset_slam():
+    """Reset the SLAM service and clear all anchors."""
+    global _slam_service
+    try:
+        if _slam_service:
+            imu_enabled = _slam_service.imu_enabled
+            _slam_service = SlamService({"imu_enabled": imu_enabled})
+        else:
+            _slam_service = SlamService({})
+        
+        return SlamStatusResponse(
+            initialized=True,
+            imu_enabled=_slam_service.imu_enabled,
+            active_anchors=0,
         )
     except Exception as e:
         raise HTTPException(500, str(e))
