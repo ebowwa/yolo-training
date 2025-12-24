@@ -29,6 +29,10 @@ streamlit>=1.24.0
 pytest>=7.0.0
 pytest-asyncio>=0.21.0
 
+# GPU Providers
+runpod>=1.7.0
+inference-sdk>=0.9.0
+
 # Optional: PEFT training
 # bitsandbytes>=0.40.0  # For 8-bit optimizers
 # accelerate>=0.21.0    # For distributed training
