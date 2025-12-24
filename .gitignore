@@ -175,3 +175,8 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots
 fastlane/test_output
+
+# Large binary files (use external storage)
+*.pt
+*.mp4
+*.webm
